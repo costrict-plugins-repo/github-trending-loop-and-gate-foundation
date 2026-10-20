@@ -1,0 +1,457 @@
+# loop-and-gate-foundation
+
+[![Listed on ClaudePluginHub](https://www.claudepluginhub.com/badge/slogsdon-loop-and-gate-foundation)](https://www.claudepluginhub.com/plugins/slogsdon-loop-and-gate-foundation?ref=badge)
+
+An AI agent that **remembers** — and gets better at working with you over
+time. Built on [Claude Code](https://claude.com/claude-code) and
+[Obsidian](https://obsidian.md), using nothing but plain markdown files and
+two small shell scripts.
+
+No prior experience with agents, loops, or Obsidian required. This README
+assumes you're starting from zero.
+
+> **Never used a terminal?** Read **[GETTING-STARTED.md](GETTING-STARTED.md)** —
+> a download-and-click path using the Claude desktop app, no terminal at all.
+> The setup below is the terminal (`git clone`) path for people who prefer it.
+
+## What this is / what it's not
+
+**It is** a memory-and-self-improvement layer for [Claude Code](https://claude.com/claude-code),
+stored as plain markdown in an Obsidian vault. You run normal interactive
+sessions; it captures facts, writes an honest self-review each time, and edits
+its own skills from lessons that repeat.
+
+**It is not** a model or a fine-tune (the weights never change — the files
+around the model do), a hosted service or database to stand up (no server, no
+vector DB — just files and two shell scripts), or a prompt library you paste
+from (it runs the loop for you).
+
+## The problem this solves
+
+Every AI chat session starts from a blank slate. You explain your project,
+your preferences, your constraints — and when the session ends, all of it
+evaporates. Tomorrow you explain it again.
+
+This system fixes that with a simple idea: **the agent writes things down.**
+
+- Facts it learns go into notes (a "second brain" it can read back later)
+- What happened each day goes into a daily log
+- After every session, it writes an honest self-review: what worked, what
+  didn't, and one lesson
+- Periodically, repeated lessons get applied as *actual edits to its own
+  instructions* — so next week's agent is measurably sharper than today's
+
+The AI model itself never changes. What improves is everything around it:
+its notes, its instructions, its habits. That's what "self-improving" means
+here — the system compounds, one session at a time.
+
+## The pieces (60-second tour)
+
+**Obsidian** is a free note-taking app that stores notes as plain markdown
+files in a folder (a "vault"). Perfect for agent memory: you can read
+everything the agent knows, edit it, and watch it grow — in a nice UI with
+links between notes. (Obsidian is optional — the files are just markdown and
+work fine without it.)
+
+**Claude Code** is Anthropic's command-line AI agent. It can read and write
+files, run commands, and follow instruction files called **skills**.
+
+**A skill** is just a markdown file that teaches Claude a repeatable
+procedure. This repo's skills:
+
+| Skill | What it does |
+|-------|--------------|
+| `setup` | First-run only: places and scaffolds your vault (runs the bundled setup script on either the clone or plugin path) and records its location |
+| `session-start` | Loads memory at the start of a session (the index, the latest daily log, the latest reflection) |
+| `capture` | Saves a durable fact to the Knowledge folder and indexes it |
+| `inbox-triage` | Clears `vault/Inbox/` — the raw thoughts you dumped from your phone — sorting each into a fact, an idea, a task, or noise, with your confirmation |
+| `profile-interview` | Interviews you to build a voice profile (how you write) and a taste profile (how you judge), so the agent can sound like you and make calls you'd agree with |
+| `reflect` | Ends a session: logs what happened + writes a self-review with one lesson |
+| `verify` | Checks a claim using a fresh subagent that never saw the work — it gets the claim and the evidence files, and is asked to disprove it |
+| `improve` | Applies lessons that have come up repeatedly — after `verify` has failed to kill them — by editing the skill files themselves |
+| `loop` | For bigger goals: your session becomes the orchestrator — it breaks the goal into tasks and dispatches a fresh subagent per iteration, verifying each result before it's committed |
+| `add-kits` | Offers to install the rest of the stack — the Build, Grow, and Accountability kits and each one's swappable pipeline — every piece a gated, declinable choice |
+
+**The loop** ties it together: one interactive Claude Code session = one
+iteration. Open Claude Code in this folder and the SessionStart hook loads
+memory, and the operating rules in `CLAUDE.md` run the protocol (load memory → work → save
+learnings → reflect). When you're done, exit. Next time, a fresh session
+picks up where the *files* left off. Only the memory files carry over between
+sessions — that's deliberate, it keeps the agent focused and reliable.
+
+## The memory layout
+
+```
+vault/
+├── MEMORY.md        ← the index: who you are, active goals, lessons,
+│                      one line per knowledge note. Kept SHORT on purpose.
+├── Inbox/           ← raw thoughts you dump from your phone, cleared by
+│                      the inbox-triage skill (see "Capturing on the go")
+├── Profiles/        ← how you write + how you judge, built by
+│                      profile-interview (see "Teaching it your voice")
+├── Daily/           ← one note per day: what happened in each session
+├── Knowledge/       ← one note per topic: facts the agent has learned
+└── Reflections/     ← the agent's self-reviews and improvement proposals
+```
+
+Three kinds of memory, if you like the theory: **episodic** (Daily — what
+happened), **semantic** (Knowledge — what's true), and the current session's
+context window (working memory, discarded every iteration). The index keeps
+it all findable without loading everything.
+
+## Prompt caching (why MEMORY.md only changes at session end)
+
+`MEMORY.md` is the most-read file in the system — the hook injects it at the
+very top of every session. Claude Code automatically caches that stable
+prefix, so as long as the file doesn't change mid-session, every message in
+the session reloads it from cache: cheaper and faster.
+
+That's why the system enforces one rule everywhere: **MEMORY.md is read at
+session start and written once at session end** (when the agent reflects, or
+when an improvement pass finishes). Facts captured mid-session go into
+`Knowledge/` notes immediately; their index lines wait for the close-out.
+One write per session = maximum cache hits = lower cost and faster sessions
+over time.
+
+## Install
+
+Two ways in: **clone** for the full self-improving loop (the skills are your
+working copy, so `improve` can edit them), or install as a **plugin** to run it
+everywhere. *(No terminal at all? Use [GETTING-STARTED.md](GETTING-STARTED.md).)*
+
+### Clone — terminal path (5 minutes)
+
+You need: a Mac or Linux machine, [Node.js](https://nodejs.org), and a
+Claude subscription or API key.
+
+```bash
+# 1. Install Claude Code (skip if you have it)
+npm install -g @anthropic-ai/claude-code
+
+# 2. Clone this repo
+git clone https://github.com/slogsdon/loop-and-gate-foundation.git
+cd loop-and-gate-foundation
+```
+
+Then open Claude Code (`claude`) and run the **`setup` skill** — just ask
+*"set up my vault"* (or `/setup`). It asks where your vault should live
+(recommending your Obsidian iCloud folder on macOS, so the same vault syncs to
+Obsidian on iPhone and iPad for free), scaffolds it, and records the path so the
+memory hook finds it every session. `/setup` is the front door on both the clone
+and plugin paths — one thing to learn.
+
+**Advanced / non-interactive:** run the underlying script directly,
+`./scripts/setup.sh ~/my-vault`, e.g. from dotfiles or CI. Without a path it
+auto-picks a location (iCloud on macOS, else `~/second-brain`) rather than
+asking — pass the path to stay in control.
+
+**Power move:** git-init the vault (setup prints the command) so every change the
+agent makes to what it knows becomes tracked and reversible.
+
+Optional but nice: install [Obsidian](https://obsidian.md), then
+"Open folder as vault" → pick your vault folder. Now you can watch the
+agent's brain grow.
+
+### Or install as a plugin (no clone)
+
+```
+/plugin marketplace add slogsdon/loop-and-gate-foundation
+```
+
+Enable it, then run the **`setup` skill** once to place your vault — just ask
+*"set up my vault"* (or `/setup`). Unlike the clone path, you have no
+`scripts/setup.sh` in your working directory here; the script ships in the
+plugin cache, and the skill finds and runs it for you. Then start any session —
+the SessionStart hook and all nine skills load globally. On this path the hook
+also injects the operating rules (`CLAUDE.md`) into every session: a plugin's
+`CLAUDE.md` isn't on Claude Code's load path, so unlike a clone it can't
+auto-load — a second SessionStart hook delivers it instead.
+
+### Or install in pi
+
+Using the [pi](https://pi.dev) agent harness (0.86.1 or later) instead of Claude
+Code:
+
+```bash
+pi install git:github.com/slogsdon/loop-and-gate-foundation
+```
+
+Then run `/skill:setup` once to place your vault. Everything the Claude Code
+plugin does comes with it:
+
+- **Skills.** All nine skills load, and each one is also a `/skill:<name>` command.
+- **Extension.** `pi/extension.ts` runs the same two hook scripts once per
+  session and appends the operating rules and working memory to the system
+  prompt. It doesn't inject them as messages. The appended block is
+  byte-identical on every turn, so the cached prefix survives the whole session.
+- **Companion tools.** On first launch it offers, once, to install two
+  community packages that stand in for Claude Code built-ins:
+  [pi-subagents](https://www.npmjs.com/package/pi-subagents) provides the
+  `subagent` tool that `loop`, `verify` and `improve` dispatch, and
+  [rpiv-ask-user-question](https://www.npmjs.com/package/@juicesharp/rpiv-ask-user-question)
+  provides the `ask_user_question` tool behind the `setup` and `add-kits` gates.
+  If you already have them, it skips the offer. They install as separate
+  packages rather than bundled copies because pi won't start with two packages
+  registering the same tool. Declining is remembered in
+  `~/.config/loop-and-gate/pi-deps-declined`; delete that file to be asked again.
+
+A clone works in pi too: run `pi` in the repo, and pi loads `CLAUDE.md` natively.
+
+**One limitation, by platform.** The `improve` skill rewrites its own skills as
+it learns. That self-editing only persists in a **clone**, where the skills are
+your working copy. Installed as a **plugin**, skills live in a read-only cache,
+so `improve` still evolves your memory (`MEMORY.md`, reflections) but not the
+skill files themselves. Windows plugin users may also need developer mode for
+the compatibility symlink. Clone for the full self-improving loop; install the
+plugin if you just want to run it everywhere.
+
+## Usage
+
+```bash
+# Start a session — the hook loads memory + the operating rules that run the protocol
+claude
+```
+
+Then talk to it. A few things to try, by name:
+
+```
+"Get to know me: ask about my project and preferences, then save what you learn"
+"Research the best CRM for a 3-person consultancy and write a comparison"
+"Build my voice profile"                              → runs profile-interview
+"Triage my inbox"                                     → sorts vault/Inbox/
+"Add the rest of the stack"                           → runs add-kits
+"Run the improve pass: apply the reflections that have earned it"
+```
+
+With no goal, it picks up open items from the last daily note. The full
+walkthroughs are just below — [Your first session](#your-first-session) and
+[Daily use](#daily-use).
+
+## Your first session
+
+Open Claude Code in this folder, then give it a goal:
+
+```bash
+claude
+# then, in the session:
+# "Get to know me: ask about my current project and preferences, then save what you learn"
+```
+
+(Or open the folder in the Claude desktop app or your IDE — same result;
+the hook does the priming — memory plus the operating rules.) It's a normal interactive session —
+you can talk to it, steer it, interrupt it. What happens:
+
+1. A session-start hook injects `vault/MEMORY.md` (nearly empty right now)
+   plus the latest daily note and reflection — automatically, every session
+2. It asks you questions, and **captures** the answers into
+   `vault/Knowledge/` notes
+3. When you wrap up, it **reflects**: logs the session to `vault/Daily/`,
+   writes its first self-review to `vault/Reflections/`, and commits
+4. Exit the session (Ctrl+D or /exit)
+
+Open the vault and look around. Everything the agent "knows" is right there
+in readable markdown. That transparency is the point.
+
+## Daily use
+
+Open Claude Code in this folder (`claude`, the desktop app, or your IDE) and
+give it a goal — or none:
+
+```
+"Research the best CRM options for a 3-person consultancy and write up a comparison"
+```
+
+With no goal, it picks up open items from the last daily note. The
+SessionStart hook loads memory and the operating rules run the protocol either way.
+
+One session = one iteration of the loop. Work until done or blocked, let it
+reflect, exit. The next session starts fresh and continues from what the
+files say — you can run one iteration a day or ten in a row.
+
+For a goal too big for one session, ask for the **loop skill**
+("run the loop on: <goal>"). Your session stays as the orchestrator and
+human gate. Each iteration runs in a subagent with a fresh context, and
+nothing lands in memory until the orchestrator verifies it. Best of both:
+clean-slate iterations *and* you watching every step.
+
+## Capturing on the go
+
+The best ideas don't wait until you're at your desk. This is where Obsidian's
+mobile app earns its keep — it's the same vault in your pocket. Drop a thought
+into `vault/Inbox/inbox.md` from your phone (one line, no structure) and it
+syncs back to your machine. The system doesn't care how it arrives: Obsidian
+Sync, iCloud, or a plain `git pull` all work, since the inbox is just a file.
+
+Next session, ask the agent to **triage the inbox**. It reads each thought,
+sorts it into a fact, an idea, a task, or noise, and — this is the part that
+matters — shows you its sorting and waits for your yes before it files
+anything. You capture in two seconds at a red light. The agent does the filing
+later, on your terms. Nothing gets filed you didn't approve, and nothing gets
+dropped you didn't see.
+
+No app to build, no server to run. Obsidian mobile plus Claude Code on your
+machine covers quick capture — but you're not limited to capture on the go.
+Running full sessions from your phone or tablet is the next section.
+
+## Working across devices
+
+Quick capture from your phone is the lightweight path. The full version: **run
+real Claude Code sessions from any device** — phone, tablet, desktop — all
+against the same vault. Two Claude Code features make it work, and the vault
+syncs underneath them.
+
+**Remote Control** lets a session running on your desktop be driven from any
+other Claude app — the web app, the mobile app, your tablet. It's off by
+default; turn it on once so it's the default for every session:
+
+```bash
+claude --remote-control        # just this session
+# make it permanent in settings.json:
+#   "remoteControlAtStartup": true
+# or in the Claude desktop app:
+#   Settings → Claude Code → enable remote control by default
+```
+
+Now you can start a session at your desk and keep steering it from the couch —
+same session, same vault, same skills.
+
+**Dispatch** is the other half, for starting work when you're away from the
+machine. From the Claude mobile app (Cowork tab), hand it a task; it spins up a
+Code session on your desktop and pushes you a notification when it's done or
+needs a decision. You delegate from your phone, the work runs where your files
+live — even from the beach.
+
+The point of both: the session always runs on the machine that holds your
+vault, so your memory and skills are available anywhere without copying
+anything around.
+
+### Syncing the vault underneath
+
+Sessions run on your desktop; the *vault* has to reach your other devices so
+Obsidian — and any quick capture — sees the same files.
+
+- **macOS + iOS/iPadOS:** iCloud, which `setup.sh` picks by default. One gotcha
+  for larger vaults — tell iCloud Drive to **keep the Obsidian folder
+  downloaded** on each device (phone, tablet, desktop). Otherwise iCloud
+  offloads it and you hit long sync delays and re-indexing when you open it.
+- **Android or Windows:** iCloud isn't an option. Use **Obsidian Sync** (paid,
+  turnkey), the community **git plugin** (free, occasionally flaky), or a
+  Dropbox / OneDrive folder. The vault is just files — anything that syncs a
+  folder works.
+
+**Mind the sync delay.** Sync isn't instant. Jot a note on your phone, then
+immediately ask a desktop session to read it, and it may report the note
+missing (brand-new) or stale (not synced yet). That's lag, not data loss — give
+it a few seconds. Editing a note on mobile while a desktop session writes to it
+is generally fine; if you want to be safe, finish on one device before you pick
+it up on another.
+
+### Running more than one session at once
+
+If you keep more than one session going, git is what stops them clobbering each
+other — two sessions committing to the same repo can bury one's changes under
+the other's. The clean fix is to **run each session in its own git worktree**,
+so each works on an isolated copy and merges deliberately. The catch:
+**delete worktrees when you're done**, or duplicate copies of your work quietly
+eat disk. Keep commits and pushes to your backup remote on **one machine** (the
+desktop) so history has a single writer.
+
+**This applies to every kit, not just the Foundation.** The Build, Grow, and
+Accountability kits all read and write the same vault, so the same sync and
+worktree discipline covers them — there's nothing kit-specific to learn.
+
+## Teaching it your voice
+
+Run **profile-interview** once ("build my voice profile") and the agent
+interviews you — one question at a time — about how you write and how you judge
+good work. It writes two reference docs into `vault/Profiles/`: a voice profile
+(so anything it drafts can sound like you) and a taste profile (so it has a
+standard to point at when it has to make a call you'd normally make yourself).
+Re-run it anytime to sharpen either one. It merges rather than overwrites.
+
+## Add the rest of the stack
+
+Foundation is the ground floor. On top of it sit three more kits — **Build**
+(ship software through judgment gates), **Grow** (take it to market), and
+**Accountability** (your own follow-through) — all in the same marketplace you
+already added. Run **add-kits** ("add the rest of the stack" or `/add-kits`) and
+it offers each one, then offers each kit's build/grow pipeline separately. Every
+piece is a gated, declinable choice: the kits are optional and the pipelines are
+swappable, so if you bring your own tools you just say no and keep your setup.
+It's safe to re-run — it skips whatever you've already installed — so you can add
+one kit now and the rest whenever.
+
+## The self-improvement part
+
+After you've run a handful of sessions, start a session and ask for an
+improvement pass:
+
+```
+"Run the improve pass: apply the reflections that have earned it."
+```
+
+The agent reads all the accumulated self-reviews and applies the lessons that
+have **come up more than once** — by editing the skill files, the memory
+index, or the config. It walks you through each change as it makes it, and
+commits so there's a diff:
+
+```bash
+git show   # review what the agent changed about itself
+```
+
+Why only repeated lessons? One bad session is noise. The same problem twice
+is a pattern. This gate is what separates self-improvement from an agent
+thrashing its own instructions. And why the git commit? So *you* stay in the
+review loop — every change the agent makes to itself is a diff you can read
+and revert.
+
+That's the whole trick, and it compounds: sharper instructions → better
+sessions → better reflections → sharper instructions.
+
+## Dials you can turn
+
+- `config.yaml` → `vault` — point at a different vault (e.g. your
+  real Obsidian vault) once you outgrow the starter one
+- `CLAUDE.md` — the agent's standing behavior rules, edit to taste (the
+  improve skill will also propose edits here over time). Auto-loaded on a clone;
+  on a plugin install the SessionStart hook injects it, since a plugin's
+  `CLAUDE.md` isn't on Claude Code's load path
+
+## FAQ
+
+**Does the AI actually learn?** The model's weights never change — no
+deployed system does that. What changes is its *environment*: notes,
+instructions, config. Functionally, it remembers and improves. Mechanically,
+it's markdown files getting better.
+
+**What if it writes something wrong into memory?** Edit the file — it's
+markdown. Or `git revert`. Every memory change is a commit.
+
+**Can it mess up its own skills?** The improve skill has guardrails (only
+repeated signals, each one then checked by a fresh agent that never saw the work,
+no gate-weakening, everything committed for your review), and `git revert` undoes
+any bad edit.
+
+**Do I need Obsidian?** No — it's a viewer. The system is just files.
+
+## Contributing
+
+Issues and pull requests are welcome. Start with
+[CONTRIBUTING.md](CONTRIBUTING.md) — it covers how to report bugs, how to
+propose skill or hook changes, and the PR conventions. One thing worth knowing
+up front: the `improve` gate (only repeated lessons, everything committed for
+review, no self-weakening) is load-bearing by design, so PRs that weaken it will
+be declined. See also the [Code of Conduct](CODE_OF_CONDUCT.md) and the
+[security policy](.github/SECURITY.md).
+
+## Going deeper
+
+- [Loop & Gate](https://shane.logsdon.io/loop-and-gate/) — the whole stack this is the
+  Foundation of: the mental model, all four pieces, and how to install them together
+- `ARCHITECTURE.md` — the architecture, the research behind each decision, and
+  what was deliberately left out
+- Lilian Weng's [LLM Powered Autonomous Agents](https://lilianweng.github.io/posts/2023-06-23-agent/)
+  — the canonical writeup of agent planning, memory, and reflection
+- Andrej Karpathy's ["system prompt learning"](https://x.com/karpathy/status/1921368644069765486)
+  — the idea this repo implements literally: an agent that edits its own
+  instructions
